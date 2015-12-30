@@ -26,7 +26,9 @@ import types
 
 from ..config.paths import set_temp_config, set_temp_cache
 from .helper import (
-    pytest, treat_deprecations_as_exceptions, enable_deprecations_as_exceptions)
+    pytest, treat_deprecations_as_exceptions,
+    enable_deprecations_as_exceptions,
+    ignore_warnings)
 from .disable_internet import turn_off_internet, turn_on_internet
 from .output_checker import AstropyOutputChecker, FIX, FLOAT_CMP
 from ..utils import OrderedDict
@@ -293,9 +295,6 @@ class DoctestPlus(object):
         # Directories to ignore when adding doctests
         self._ignore_paths = []
 
-        if run_rst_doctests and six.PY3:
-            self._run_rst_doctests = False
-
     def pytest_ignore_collect(self, path, config):
         """Skip paths that match any of the doctest_norecursedirs patterns."""
 
@@ -353,10 +352,10 @@ class DoctestPlus(object):
             return self._doctest_module_item_cls(path, parent)
         elif self._run_rst_doctests and path.ext == '.rst':
             # Ignore generated .rst files
-            parts = bytes(path).split(os.path.sep)
-            if (path.basename.startswith(b'_') or
-                any(x.startswith(b'_') for x in parts) or
-                any(x == b'api' for x in parts)):
+            parts = str(path).split(os.path.sep)
+            if (path.basename.startswith('_') or
+                    any(x.startswith('_') for x in parts) or
+                    any(x == 'api' for x in parts)):
                 return None
 
             # TODO: Get better names on these items when they are
@@ -534,7 +533,8 @@ def pytest_runtest_teardown(item, nextitem):
 PYTEST_HEADER_MODULES = OrderedDict([('Numpy', 'numpy'),
                                      ('Scipy', 'scipy'),
                                      ('Matplotlib', 'matplotlib'),
-                                     ('h5py', 'h5py')])
+                                     ('h5py', 'h5py'),
+                                     ('Pandas', 'pandas')])
 
 # This always returns with Astropy's version
 from .. import __version__
@@ -600,7 +600,8 @@ def pytest_report_header(config):
 
     for module_display, module_name in six.iteritems(PYTEST_HEADER_MODULES):
         try:
-            module = resolve_name(module_name)
+            with ignore_warnings(DeprecationWarning):
+                module = resolve_name(module_name)
         except ImportError:
             s += "{0}: not available\n".format(module_display)
         else:
@@ -617,9 +618,6 @@ def pytest_report_header(config):
             opts.append(op)
     if opts:
         s += "Using Astropy options: {0}.\n".format(" ".join(opts))
-
-    if six.PY3 and (config.getini('doctest_rst') or config.option.doctest_rst):
-        s += "Running doctests in .rst files is not supported on Python 3.x\n"
 
     if not six.PY3:
         s = s.encode(stdoutencoding, 'replace')
